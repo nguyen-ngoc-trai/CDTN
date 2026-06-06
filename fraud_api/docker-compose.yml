@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ───────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: fraud_db
+    environment:
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: fraud_redis
+    ports:
+      - "6379:6379"
+
+  # ── FastAPI Backend ──────────────────────────────────────────
+  api:
+    build: .
+    container_name: fraud_api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/fraud_db
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: change-this-in-production
+      MODELS_DIR: /app/ml_models
+    volumes:
+      - ./ml_models:/app/ml_models      # Mount thư mục chứa file .pkl
+      - ./uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── React Frontend (để sau Tuần 8) ───────────────────────────
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "3000:80"
+  #   depends_on:
+  #     - api
+
+volumes:
+  pg_data:
